@@ -1,0 +1,42 @@
+Projekt Semestralny: Analiza Wpływu Social Media na Dobrostan i Oceny
+
+Jak Uruchomić Projekt?
+
+1. Upewnij się, że masz zainstalowane wszystkie zależności (najlepiej w wirtualnym środowisku): w cmd wpisz: pip install pandas numpy matplotlib seaborn openpyxl
+2. Po zapisaniu pliku jako main.py, uruchom go: python main.py
+3. Załadowanie Danych:Wewnątrz aplikacji użyj przycisku "WGRAJ DANE Z PLIKU CSV/XLSX" i wybierz surowy plik z odpowiedziami. Wbudowana logika czyszczenia i mapowania kolumn automatycznie przetworzy dane na format liczbowy. 
+
+
+Krótki Opis:
+Aplikacja desktopowa (GUI) stworzona w Pythonie do zaawansowanej analizy statystycznej i wizualizacji danych ankietowych. Projekt zrealizowano zgodnie z wytycznymi analizy danych. Aplikacja weryfikuje hipotezy korelacyjne dotyczące wpływu cyfrowego rozproszenia (Czas w SM) na wyniki w nauce (Oceny) i zdrowie psychiczne (Stres, Satysfakcja, Sen).
+
+
+
+Metodologia i Narzędzia:
+Środowisko i Biblioteki
+Język: Python 3.x
+
+
+
+Interfejs (GUI): tkinter
+Analiza Danych: pandas, numpy
+Wizualizacja: matplotlib, seaborn
+Zgodność: Aplikacja działa w trybie Dark Mode i jest kompilowalna do pliku .exe (PyInstaller).
+
+
+Analiza Statystyczna
+Aplikacja jest przystosowana do generowania pełnego zestawu statystyk opisowych dla każdej zmiennej, zgodnie z wymogami projektu:
+Miary Tendencji Centralnej: Średnia (Mean), Mediana, Dominanta (Mode, z zaokrągleniem).
+Miary Rozproszenia: Zakres (Range), Kwartyle (Q1, Q3), Rozstęp Międzykwartylowy (IQR), Odchylenie Standardowe (Standard Deviation).
+Korelacja: Wyznaczanie Współczynnika Korelacji Pearsona (wyświetlanego w Mapie Ciepła i Wykresach Punktowych).
+
+
+Struktura Aplikacji i Wykresy:
+Aplikacja dzieli analizę na 6 logicznych zakładek. Zakładki 2-6 zawierają pełną statystykę (tekstową) oraz 5 kluczowych wykresów, które pozwalają na wieloaspektową ocenę danych:
+Zakładka,Zmienna Zależna (Y),Wykresy w Zakładce
+1. Macierz Korelacji,Wszystkie zmienne,Mapa Ciepła (Heatmap korelacji Pearsona).
+2. SM a Satysfakcja,Satysfakcja z życia,"Scatter, Box, Bar, Line, Pie Chart (grupowy)."
+3. SM a Skupienie,Łatwość skupienia,"Scatter, Box, Bar, Line, Pie Chart."
+4. SM a Sen,Czas Snu,"Scatter, Box, Bar, Line, Pie Chart."
+5. SM a Oceny,Średnia Ocen,"Scatter, Box, Bar, Line, Pie Chart."
+6. SM a Stres,Poziom Stresu,"Scatter, Box, Bar, Line, Pie Chart."
