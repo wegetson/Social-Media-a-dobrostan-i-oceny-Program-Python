@@ -1,0 +1,334 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import seaborn as sns
+
+# =============================================================================
+# KONFIGURACJA WYGLĄDU (MOTYW CIEMNY)
+# =============================================================================
+COLOR_BG = "#2E2E2E"       # Ciemnoszare tło okna
+COLOR_PANEL = "#3C3F41"    # Nieco jaśniejsze tło paneli
+COLOR_TEXT = "#FFFFFF"     # Biały tekst
+COLOR_ACCENT = "#00E676"   # Zielony kolor przycisków
+COLOR_CHART_BG = "#2E2E2E" # Tło dla wykresów
+
+# Ustawiamy styl wykresów na ciemny, żeby pasował do aplikacji
+plt.style.use('dark_background')
+
+# Mapa nazw kolumn - program szuka słów kluczowych w Twoim pliku CSV/Excel
+# i zamienia je na krótkie, wygodne nazwy do kodu.
+KOLUMNY_MAPA = {
+    "płeć": "Plec",
+    "czas w social": "SocialMedia",  # Szuka frazy "czas w social"
+    "czas snu": "Sen",
+    "średnia ocen": "Oceny",
+    "satysfakcja": "Satysfakcja",
+    "skupienia": "Skupienie",
+    "stres": "Stres"
+}
+
+class AnalizaMasterApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Projekt Semestralny: Zaawansowana Analiza Danych")
+        self.root.geometry("1400x900")
+        self.root.configure(bg=COLOR_BG)
+
+        self.df = None # Tutaj będą przechowywane dane po wczytaniu
+
+        # --- STYLE UI (Wygląd przycisków i zakładek) ---
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("TFrame", background=COLOR_BG)
+        style.configure("Panel.TFrame", background=COLOR_PANEL)
+        style.configure("TLabel", background=COLOR_PANEL, foreground=COLOR_TEXT, font=("Segoe UI", 10))
+        # Styl zakładek
+        style.configure("TNotebook", background=COLOR_BG, borderwidth=0)
+        style.configure("TNotebook.Tab", background="#505050", foreground="white", padding=[10, 5])
+        style.map("TNotebook.Tab", background=[("selected", "#007ACC")]) # Niebieski po wybraniu
+
+        # --- UKŁAD OKNA ---
+        # 1. Panel boczny (lewy) - Przyciski i Statystyki
+        self.side_panel = ttk.Frame(self.root, style="Panel.TFrame", padding=15)
+        self.side_panel.pack(side="left", fill="y")
+
+        # 2. Panel główny (prawy) - Wykresy
+        self.main_panel = ttk.Frame(self.root, style="TFrame")
+        self.main_panel.pack(side="right", fill="both", expand=True)
+
+        # --- ELEMENTY PANELU BOCZNEGO ---
+        ttk.Label(self.side_panel, text="MENU GŁÓWNE", font=("Segoe UI", 14, "bold")).pack(pady=(0, 20))
+
+        # Przycisk Wgrywania
+        self.btn_load = tk.Button(self.side_panel, text="📂 WGRAJ PLIK (CSV/XLSX)", bg=COLOR_ACCENT, fg="black",
+                                  font=("Segoe UI", 10, "bold"), relief="flat", command=self.load_file)
+        self.btn_load.pack(fill="x", pady=10)
+
+        # Pole tekstowe na statystyki (Tu pojawią się te wszystkie Mean, Median, IQR...)
+        ttk.Label(self.side_panel, text="Szczegółowe Statystyki:").pack(pady=(20, 5), anchor="w")
+        self.txt_stats = tk.Text(self.side_panel, height=30, width=35, bg="#202020", fg="#00FF00",
+                                 bd=0, font=("Consolas", 9))
+        self.txt_stats.pack(fill="both", expand=True)
+
+        # --- ZAKŁADKI (TABS) ---
+        self.notebook = ttk.Notebook(self.main_panel)
+        self.notebook.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Tworzymy słownik zakładek, żeby mieć do nich dostęp
+        self.tabs = {}
+        # Lista nazw zakładek dokładnie taka jak chciałeś
+        self.tab_names = [
+            "1. Macierz Korelacji",   # Tylko korelacja Pearsona
+            "2. SM a Satysfakcja",    # Pełna analiza + 5 wykresów
+            "3. SM a Skupienie",
+            "4. SM a Sen",
+            "5. SM a Oceny",
+            "6. SM a Stres"
+        ]
+
+        for name in self.tab_names:
+            frame = ttk.Frame(self.notebook, style="TFrame")
+            self.notebook.add(frame, text=name)
+            self.tabs[name] = frame
+
+    # =========================================================================
+    # LOGIKA PROGRAMU (WCZYTYWANIE I CZYSZCZENIE)
+    # =========================================================================
+    def load_file(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Pliki danych", "*.csv *.xlsx")])
+        if not file_path:
+            return
+
+        try:
+            # 1. Wczytanie pliku (obsługa CSV i Excela)
+            if file_path.endswith('.xlsx'):
+                self.df = pd.read_excel(file_path)
+            else:
+                # 'sep=None, engine=python' pozwala automatycznie wykryć czy separator to przecinek czy średnik
+                self.df = pd.read_csv(file_path, sep=None, engine='python')
+
+            # 2. Zmiana nazw kolumn na krótkie (Mapowanie)
+            # Dzięki temu nie musimy się martwić długimi pytaniami w nagłówkach
+            new_cols = {}
+            for col in self.df.columns:
+                col_lower = col.lower()
+                for key, val in KOLUMNY_MAPA.items():
+                    if key in col_lower:
+                        new_cols[col] = val
+                        break
+            self.df.rename(columns=new_cols, inplace=True)
+
+            # 3. Zamiana tekstów na liczby (Dla Czasu w Social Mediach)
+            # Jeśli w pliku są napisy "1-2 godziny", zamieniamy na 1.5
+            sm_map = {
+                "Mniej niż 1 godzina": 0.5,
+                "1–2 godziny": 1.5,
+                "3–4 godziny": 3.5,
+                "Powyżej 4 godzin": 5.0
+            }
+            if 'SocialMedia' in self.df.columns:
+                # Zamienia tylko jeśli znajdzie tekst, liczby zostawia
+                self.df['SocialMedia'] = self.df['SocialMedia'].map(sm_map).fillna(self.df['SocialMedia'])
+                # Upewniamy się, że kolumna jest liczbowa
+                self.df['SocialMedia'] = pd.to_numeric(self.df['SocialMedia'], errors='coerce')
+
+            # 4. Czyszczenie reszty liczb (np. zamiana przecinków na kropki w ocenach)
+            cols_to_clean = ['Sen', 'Oceny', 'Satysfakcja', 'Skupienie', 'Stres']
+            for col in cols_to_clean:
+                if col in self.df.columns:
+                    # Jeśli kolumna jest tekstem, zamień przecinek na kropkę
+                    if self.df[col].dtype == object:
+                        self.df[col] = self.df[col].astype(str).str.replace(',', '.')
+                    self.df[col] = pd.to_numeric(self.df[col], errors='coerce')
+
+            # Po wczytaniu od razu rysujemy wszystko
+            self.draw_all_tabs()
+            messagebox.showinfo("Sukces", "Dane wczytane i przeanalizowane!")
+
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Nie udało się wczytać pliku:\n{e}")
+
+    # =========================================================================
+    # GŁÓWNA FUNKCJA STERUJĄCA RYSOWANIEM
+    # =========================================================================
+    def draw_all_tabs(self):
+        # 1. Rysujemy Macierz Korelacji (Zakładka 1)
+        self.draw_correlation_tab()
+
+        # 2. Rysujemy pozostałe 5 zakładek
+        # Każda funkcja przyjmuje: (Nazwa zakładki, Zmienna Y do analizy)
+        # Zmienna X to zawsze SocialMedia
+        self.draw_detail_tab("2. SM a Satysfakcja", "Satysfakcja")
+        self.draw_detail_tab("3. SM a Skupienie", "Skupienie")
+        self.draw_detail_tab("4. SM a Sen", "Sen")
+        self.draw_detail_tab("5. SM a Oceny", "Oceny")
+        self.draw_detail_tab("6. SM a Stres", "Stres")
+
+        # 3. Wyświetlamy statystyki zbiorcze w panelu bocznym (dla orientacji)
+        self.update_side_stats()
+
+    # =========================================================================
+    # ZAKŁADKA 1: MACIERZ KORELACJI PEARSONA
+    # =========================================================================
+    def draw_correlation_tab(self):
+        frame = self.tabs["1. Macierz Korelacji"]
+        # Czyścimy stare wykresy z zakładki
+        for widget in frame.winfo_children(): widget.destroy()
+
+        # Tworzymy figurę
+        fig, ax = plt.subplots(figsize=(10, 8), dpi=100)
+        
+        # Wybieramy tylko kolumny liczbowe
+        cols = ['SocialMedia', 'Sen', 'Oceny', 'Satysfakcja', 'Skupienie', 'Stres']
+        # Sprawdzamy, które kolumny faktycznie istnieją w pliku
+        available_cols = [c for c in cols if c in self.df.columns]
+        
+        # Obliczamy korelację Pearsona
+        corr = self.df[available_cols].corr(method='pearson')
+        
+        # Rysujemy mapę ciepła (heatmap)
+        sns.heatmap(corr, annot=True, cmap='coolwarm', vmin=-1, vmax=1, ax=ax, fmt=".2f")
+        ax.set_title("Współczynnik Korelacji Pearsona (Wszystkie zmienne)")
+
+        # Wstawiamy wykres do okna
+        canvas = FigureCanvasTkAgg(fig, master=frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    # =========================================================================
+    # ZAKŁADKI 2-6: SZCZEGÓŁOWA ANALIZA + 5 WYKRESÓW
+    # =========================================================================
+    def draw_detail_tab(self, tab_name, col_y):
+        frame = self.tabs[tab_name]
+        for widget in frame.winfo_children(): widget.destroy()
+
+        if col_y not in self.df.columns:
+            ttk.Label(frame, text=f"Brak kolumny: {col_y}").pack()
+            return
+
+        # --- A. OBLICZENIA STATYSTYCZNE (Dla zmiennej Y) ---
+        series = self.df[col_y].dropna()
+        
+        stat_min = series.min()
+        stat_max = series.max()
+        stat_range = stat_max - stat_min
+        stat_mean = series.mean()
+        stat_median = series.median()
+        stat_std = series.std()
+        
+        # Kwartyle i IQR
+        Q1 = series.quantile(0.25)
+        Q3 = series.quantile(0.75)
+        IQR = Q3 - Q1
+        
+        # Dominanta (Mode) - zaokrąglamy zgodnie z życzeniem
+        # round(0) zaokrągla do liczby całkowitej (np. ocena 4.0)
+        mode_val = series.round(0).mode()
+        stat_mode = mode_val[0] if not mode_val.empty else "Brak"
+
+        # Tekst do wyświetlenia w panelu bocznym (gdy klikniesz zakładkę)
+        # UWAGA: W tej architekturze panel boczny jest wspólny, więc zrobimy myk:
+        # Dodamy ramkę tekstową wewnątrz samej zakładki po lewej stronie.
+        
+        # Dzielimy zakładkę na dwie części: Lewa (Tekst), Prawa (Wykresy)
+        split_frame = ttk.Frame(frame)
+        split_frame.pack(fill="both", expand=True)
+        
+        left_stats = tk.Text(split_frame, width=30, bg="#202020", fg="#00E676", font=("Consolas", 10))
+        left_stats.pack(side="left", fill="y", padx=5, pady=5)
+        
+        # Wpisujemy dane
+        report = f"ANALIZA ZMIENNEJ:\n{col_y.upper()}\n" + "="*25 + "\n\n"
+        report += f"1. ZAKRES (Range):\n   {stat_min} - {stat_max}\n   (Rozstęp: {stat_range:.2f})\n\n"
+        report += f"2. ŚREDNIA (Mean):\n   {stat_mean:.2f}\n\n"
+        report += f"3. MEDIANA (Median):\n   {stat_median:.2f}\n\n"
+        report += f"4. DOMINANTA (Mode):\n   {stat_mode} (zaokr.)\n\n"
+        report += f"5. KWARTYLE:\n   Q1 (25%): {Q1:.2f}\n   Q2 (Mediana): {stat_median:.2f}\n   Q3 (75%): {Q3:.2f}\n\n"
+        report += f"6. ROZSTĘP ĆWIARTKOWY (IQR):\n   {IQR:.2f}\n\n"
+        report += f"7. ODCHYLENIE STD:\n   {stat_std:.2f}\n"
+        
+        left_stats.insert("1.0", report)
+        left_stats.config(state="disabled") # Blokada edycji
+
+        # --- B. WYKRESY (5 RÓŻNYCH) ---
+        # Używamy subplots, żeby zmieścić 5 wykresów na jednym ekranie
+        # Układ: 2 wiersze, 3 kolumny (ostatni pusty lub zajęty)
+        
+        right_charts = ttk.Frame(split_frame)
+        right_charts.pack(side="right", fill="both", expand=True)
+
+        fig = plt.figure(figsize=(12, 8))
+        # Definiujemy siatkę (GridSpec) dla ładnego układu
+        gs = fig.add_gridspec(2, 3)
+
+        # 1. SCATTER PLOT (Korelacyjny) - SM vs Y
+        ax1 = fig.add_subplot(gs[0, 0])
+        sns.regplot(x='SocialMedia', y=col_y, data=self.df, ax=ax1, 
+                    scatter_kws={'color': '#00E676', 'alpha':0.6}, line_kws={'color': 'white'})
+        ax1.set_title(f"1. Scatter: SM a {col_y}")
+        ax1.set_xlabel("Czas w SM (h)")
+
+        # 2. BOX PLOT (Pudełkowy) - Rozkład Y
+        ax2 = fig.add_subplot(gs[0, 1])
+        sns.boxplot(y=self.df[col_y], ax=ax2, color="#2979FF")
+        ax2.set_title(f"2. Box Plot: {col_y}")
+
+        # 3. BAR CHART (Słupkowy) - Rozkład ilościowy (Histogram)
+        ax3 = fig.add_subplot(gs[0, 2])
+        sns.histplot(self.df[col_y], kde=True, ax=ax3, color="#FF4081")
+        ax3.set_title(f"3. Histogram: {col_y}")
+
+        # 4. LINE CHART (Liniowy) - Posortowane wartości (Trend rosnący w grupie)
+        ax4 = fig.add_subplot(gs[1, 0])
+        sorted_data = self.df[col_y].sort_values().reset_index(drop=True)
+        ax4.plot(sorted_data, color="#FFD740", linewidth=2)
+        ax4.set_title(f"4. Liniowy (Posortowany): {col_y}")
+        ax4.set_xlabel("Nr respondenta (posortowany)")
+
+        # 5. PIE CHART (Kołowy) - Grupowanie danych (zgodnie z życzeniem)
+        ax5 = fig.add_subplot(gs[1, 1])
+        
+        # Logika grupowania (zależnie od tego co badamy)
+        labels = []
+        counts = []
+        
+        if col_y == "Oceny":
+            bins = [0, 2.9, 3.9, 5.0] # Niskie, Średnie, Wysokie
+            groups = pd.cut(self.df[col_y], bins, labels=["Niskie (<3.0)", "Średnie (3-4)", "Wysokie (>4.0)"])
+        elif col_y == "Sen":
+            bins = [0, 6, 8, 24]
+            groups = pd.cut(self.df[col_y], bins, labels=["Mało (<6h)", "Norma (6-8h)", "Dużo (>8h)"])
+        else: # Dla skali 1-10 (Stres, Skupienie, Satysfakcja)
+            bins = [0, 4, 7, 10]
+            groups = pd.cut(self.df[col_y], bins, labels=["Niski (1-4)", "Średni (5-7)", "Wysoki (8-10)"])
+        
+        counts_series = groups.value_counts()
+        ax5.pie(counts_series, labels=counts_series.index, autopct='%1.1f%%', 
+                colors=['#00E676', '#FFAB00', '#FF1744'], startangle=140)
+        ax5.set_title(f"5. Kołowy (Grupy): {col_y}")
+
+        # Usuwamy ewentualny pusty wykres nr 6 (mamy 5 wykresów na siatce 6 pól)
+        ax6 = fig.add_subplot(gs[1, 2])
+        ax6.axis('off')
+        ax6.text(0.1, 0.5, "Wnioski:\nAnaliza pokazuje rozkład\nzmiennej oraz jej korelację\nz czasem w Social Media.", fontsize=12, color="gray")
+
+        plt.tight_layout()
+        
+        canvas = FigureCanvasTkAgg(fig, master=right_charts)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def update_side_stats(self):
+        # Ta funkcja wyświetla tylko ogólne info w lewym panelu głównym
+        txt = "Wybierz zakładkę u góry,\naby zobaczyć szczegółowe\nwykresy i statystyki."
+        self.txt_stats.delete("1.0", tk.END)
+        self.txt_stats.insert("1.0", txt)
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = AnalizaMasterApp(root)
+    root.mainloop()
